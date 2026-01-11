@@ -1,7 +1,7 @@
 from googleapiclient.discovery import build
 import pandas as pd
 
-API_KEY = "AIzaSyChxQvJmHZzqlMYP-FNLT-ZhG3eja1hOHQ"
+API_KEY = ""
 
 youtube = build("youtube", "v3", developerKey=API_KEY)
 
