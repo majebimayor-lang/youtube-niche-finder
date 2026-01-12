@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import random
 from googleapiclient.discovery import build
 
 # -----------------------------
@@ -8,11 +9,13 @@ from googleapiclient.discovery import build
 st.set_page_config(page_title="YouTube Niche Finder", layout="wide")
 
 API_KEY = st.secrets["API_KEY"]
-
 youtube = build("youtube", "v3", developerKey=API_KEY)
 
 st.title("🎙️ YouTube Channel Finder")
-st.write("Search YouTube channels by niche, subscribers, and location")
+st.write(
+    "Find YouTube channels by niche, subscriber size, location — "
+    "with fresh results every search."
+)
 
 # -----------------------------
 # USER INPUTS
@@ -36,8 +39,25 @@ search_button = st.button("Search Channels")
 # FUNCTIONS
 # -----------------------------
 def search_channels(youtube, query, max_pages):
+    """
+    Search YouTube channels with intentional randomness
+    so the same niche returns different results.
+    """
     channels = []
     next_page_token = None
+
+    # Randomize result order
+    order = random.choice(["relevance", "date", "viewCount"])
+
+    # Randomize keyword variations
+    keyword_variants = [
+        query,
+        f"{query} podcast",
+        f"{query} show",
+        f"new {query}",
+        f"small {query}"
+    ]
+    query = random.choice(keyword_variants)
 
     for _ in range(max_pages):
         request = youtube.search().list(
@@ -45,6 +65,7 @@ def search_channels(youtube, query, max_pages):
             q=query,
             type="channel",
             maxResults=50,
+            order=order,
             pageToken=next_page_token
         )
         response = request.execute()
@@ -56,16 +77,20 @@ def search_channels(youtube, query, max_pages):
         if not next_page_token:
             break
 
+    # Remove duplicates
     return list(set(channels))
 
 
 def get_channel_stats(youtube, channel_ids):
+    """
+    Fetch statistics and location for channels
+    """
     data = []
 
     for i in range(0, len(channel_ids), 50):
         request = youtube.channels().list(
             part="snippet,statistics",
-            id=",".join(channel_ids[i:i+50])
+            id=",".join(channel_ids[i:i + 50])
         )
         response = request.execute()
 
@@ -94,10 +119,7 @@ if search_button and niche:
         stats = get_channel_stats(youtube, channel_ids)
 
         def location_match(country):
-            return (
-                "All" in locations
-                or country in locations
-            )
+            return "All" in locations or country in locations
 
         filtered = [
             c for c in stats
@@ -113,13 +135,19 @@ if search_button and niche:
 
             st.success(f"Found {len(df)} channels")
 
-            # Render HTML links safely
+            # Render clickable links (new tab)
             st.markdown(
                 df.to_html(escape=False, index=False),
                 unsafe_allow_html=True
             )
 
-            csv = df.drop(columns=["Channel URL"]).to_csv(index=False).encode("utf-8")
+            # CSV without HTML links
+            csv = (
+                df.drop(columns=["Channel URL"])
+                .to_csv(index=False)
+                .encode("utf-8")
+            )
+
             st.download_button(
                 "Download CSV",
                 csv,
