@@ -25,40 +25,29 @@ search_button = st.button("Search Channels")
 # -----------------------------
 # FUNCTIONS
 # -----------------------------
-def search_channels(keyword, max_results=30):
-    request = youtube.search().list(
-        q=keyword,
-        part="snippet",
-        type="channel",
-        maxResults=max_results
-    )
-    response = request.execute()
-    return [item["snippet"]["channelId"] for item in response["items"]]
+def search_channels(youtube, query, max_pages=5):
+    channels = []
+    next_page_token = None
 
-def get_channel_stats(channel_ids):
-    request = youtube.channels().list(
-        part="snippet,statistics",
-        id=",".join(channel_ids)
-    )
-    response = request.execute()
+    for _ in range(max_pages):
+        request = youtube.search().list(
+            part="snippet",
+            q=query,
+            type="channel",
+            maxResults=50,
+            pageToken=next_page_token
+        )
+        response = request.execute()
 
-    results = []
-    for item in response["items"]:
-        subs = int(item["statistics"].get("subscriberCount", 0))
-        views = int(item["statistics"].get("viewCount", 0))
+        for item in response["items"]:
+            channels.append(item["snippet"]["channelId"])
 
-        if subs < min_subs or subs > max_subs:
-            continue
+        next_page_token = response.get("nextPageToken")
+        if not next_page_token:
+            break
 
-        results.append({
-            "Channel Name": item["snippet"]["title"],
-            "Subscribers": subs,
-            "Total Views": views,
-            "Videos": item["statistics"].get("videoCount", 0),
-            "Channel URL": f"https://www.youtube.com/channel/{item['id']}"
-        })
+    return channels
 
-    return results
 
 # -----------------------------
 # RUN SEARCH
