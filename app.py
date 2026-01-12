@@ -24,9 +24,10 @@ max_subs = st.number_input("Maximum subscribers", min_value=0, value=100)
 
 pages = st.slider("How deep should we search?", 1, 10, 3)
 
-location = st.selectbox(
-    "Channel location",
-    ["All", "US", "GB", "CA", "NG", "AU", "DE", "FR"]
+locations = st.multiselect(
+    "Channel locations",
+    ["All", "US", "GB", "CA", "NG", "AU", "DE", "FR"],
+    default=["All"]
 )
 
 search_button = st.button("Search Channels")
@@ -71,6 +72,7 @@ def get_channel_stats(youtube, channel_ids):
         for item in response["items"]:
             subs = int(item["statistics"].get("subscriberCount", 0))
             country = item["snippet"].get("country", "Unknown")
+            url = f"https://www.youtube.com/channel/{item['id']}"
 
             data.append({
                 "Channel Name": item["snippet"]["title"],
@@ -78,7 +80,7 @@ def get_channel_stats(youtube, channel_ids):
                 "Videos": int(item["statistics"].get("videoCount", 0)),
                 "Views": int(item["statistics"].get("viewCount", 0)),
                 "Country": country,
-                "Channel URL": f"https://www.youtube.com/channel/{item['id']}"
+                "Channel URL": f'<a href="{url}" target="_blank">Visit Channel</a>'
             })
 
     return data
@@ -91,10 +93,16 @@ if search_button and niche:
         channel_ids = search_channels(youtube, niche, pages)
         stats = get_channel_stats(youtube, channel_ids)
 
+        def location_match(country):
+            return (
+                "All" in locations
+                or country in locations
+            )
+
         filtered = [
             c for c in stats
             if min_subs <= c["Subscribers"] <= max_subs
-            and (location == "All" or c["Country"] == location)
+            and location_match(c["Country"])
         ]
 
         if filtered:
@@ -104,9 +112,14 @@ if search_button and niche:
             )
 
             st.success(f"Found {len(df)} channels")
-            st.dataframe(df, use_container_width=True)
 
-            csv = df.to_csv(index=False).encode("utf-8")
+            # Render HTML links safely
+            st.markdown(
+                df.to_html(escape=False, index=False),
+                unsafe_allow_html=True
+            )
+
+            csv = df.drop(columns=["Channel URL"]).to_csv(index=False).encode("utf-8")
             st.download_button(
                 "Download CSV",
                 csv,
