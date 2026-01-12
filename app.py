@@ -2,15 +2,17 @@ import streamlit as st
 import pandas as pd
 from googleapiclient.discovery import build
 
-# 🔑 PUT YOUR API KEY HERE
-API_KEY = st.secrets ["API_KEY"]
+# -----------------------------
+# CONFIG
+# -----------------------------
+st.set_page_config(page_title="YouTube Niche Finder", layout="wide")
+
+API_KEY = st.secrets["API_KEY"]
 
 youtube = build("youtube", "v3", developerKey=API_KEY)
 
-st.set_page_config(page_title="YouTube Niche Finder", layout="wide")
-
 st.title("🎙️ YouTube Channel Finder")
-st.write("Search YouTube channels by niche and subscriber size")
+st.write("Search YouTube channels by niche, subscribers, and location")
 
 # -----------------------------
 # USER INPUTS
@@ -18,14 +20,21 @@ st.write("Search YouTube channels by niche and subscriber size")
 niche = st.text_input("Enter niche (e.g. podcast, real estate, fitness)")
 
 min_subs = st.number_input("Minimum subscribers", min_value=0, value=0)
-max_subs = st.number_input("Maximum subscribers", min_value=0, value=100000)
+max_subs = st.number_input("Maximum subscribers", min_value=0, value=100)
+
+pages = st.slider("How deep should we search?", 1, 10, 3)
+
+location = st.selectbox(
+    "Channel location",
+    ["All", "US", "GB", "CA", "NG", "AU", "DE", "FR"]
+)
 
 search_button = st.button("Search Channels")
 
 # -----------------------------
 # FUNCTIONS
 # -----------------------------
-def search_channels(youtube, query, max_pages=5):
+def search_channels(youtube, query, max_pages):
     channels = []
     next_page_token = None
 
@@ -46,21 +55,56 @@ def search_channels(youtube, query, max_pages=5):
         if not next_page_token:
             break
 
-    return channels
+    return list(set(channels))
 
+
+def get_channel_stats(youtube, channel_ids):
+    data = []
+
+    for i in range(0, len(channel_ids), 50):
+        request = youtube.channels().list(
+            part="snippet,statistics",
+            id=",".join(channel_ids[i:i+50])
+        )
+        response = request.execute()
+
+        for item in response["items"]:
+            subs = int(item["statistics"].get("subscriberCount", 0))
+            country = item["snippet"].get("country", "Unknown")
+
+            data.append({
+                "Channel Name": item["snippet"]["title"],
+                "Subscribers": subs,
+                "Videos": int(item["statistics"].get("videoCount", 0)),
+                "Views": int(item["statistics"].get("viewCount", 0)),
+                "Country": country,
+                "Channel URL": f"https://www.youtube.com/channel/{item['id']}"
+            })
+
+    return data
 
 # -----------------------------
 # RUN SEARCH
 # -----------------------------
 if search_button and niche:
     with st.spinner("Searching YouTube..."):
-        channel_ids = search_channels(niche)
-        data = get_channel_stats(channel_ids)
+        channel_ids = search_channels(youtube, niche, pages)
+        stats = get_channel_stats(youtube, channel_ids)
 
-        if data:
-            df = pd.DataFrame(data)
+        filtered = [
+            c for c in stats
+            if min_subs <= c["Subscribers"] <= max_subs
+            and (location == "All" or c["Country"] == location)
+        ]
+
+        if filtered:
+            df = (
+                pd.DataFrame(filtered)
+                .sort_values(["Country", "Subscribers"])
+            )
+
             st.success(f"Found {len(df)} channels")
-            st.dataframe(df)
+            st.dataframe(df, use_container_width=True)
 
             csv = df.to_csv(index=False).encode("utf-8")
             st.download_button(
