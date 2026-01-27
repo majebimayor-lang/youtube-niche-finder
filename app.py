@@ -1,91 +1,126 @@
-import pandas as pd
-from googleapiclient.discovery import build
-from googleapiclient.errors import HttpError
+import sys
+import time
 
-# ==============================
-# ADD YOUR API KEY HERE
-# ==============================
-API_KEY = "PASTE_YOUR_API_KEY_HERE"
-# ==============================
+# Try to import libraries and warn if missing
+try:
+    import pandas as pd
+    from googleapiclient.discovery import build
+    from googleapiclient.errors import HttpError
+except ImportError as e:
+    print("CRITICAL ERROR: A required library is missing.")
+    print(f"Missing library: {e.name}")
+    print("Please run: pip install google-api-python-client pandas")
+    input("Press Enter to exit...")
+    sys.exit()
 
+# --- CONFIGURATION ---
+# PASTE YOUR KEY INSIDE THE QUOTES BELOW
+API_KEY = 'YOUR_API_KEY_HERE' 
 
-def get_youtube_service():
-    if not API_KEY or API_KEY == "PASTE_YOUR_API_KEY_HERE":
-        raise ValueError("❌ API key is missing. Paste your YouTube API key.")
+def search_channels_safe(query, max_results=50):
+    """
+    Searches for channels with error handling.
+    """
+    try:
+        youtube = build('youtube', 'v3', developerKey=API_KEY)
+    except Exception as e:
+        print(f"\n[!] Error connecting to API: {e}")
+        return []
 
-    return build("youtube", "v3", developerKey=API_KEY)
-
-
-def search_channels(keyword, max_results=50):
-    youtube = get_youtube_service()
-    channels = []
+    channels_data = []
     next_page_token = None
+    
+    print(f"\n--- Searching for: '{query}' ---")
 
-    print(f"\n🔍 Searching channels for: '{keyword}'")
-
-    while len(channels) < max_results:
+    while len(channels_data) < max_results:
         try:
+            remaining = max_results - len(channels_data)
+            fetch_count = min(remaining, 50)
+            
             request = youtube.search().list(
-                q=keyword,
-                part="snippet",
-                type="channel",
-                maxResults=min(50, max_results - len(channels)),
-                pageToken=next_page_token,
+                q=query,
+                type='channel',
+                part='snippet',
+                maxResults=fetch_count,
+                pageToken=next_page_token
             )
-
             response = request.execute()
-
-            for item in response.get("items", []):
-                channels.append({
-                    "Channel Name": item["snippet"]["channelTitle"],
-                    "Channel ID": item["id"]["channelId"],
-                    "Description": item["snippet"]["description"],
-                    "Published At": item["snippet"]["publishedAt"],
-                    "URL": f"https://www.youtube.com/channel/{item['id']['channelId']}"
-                })
-
-            next_page_token = response.get("nextPageToken")
-            if not next_page_token:
+            
+            items = response.get('items', [])
+            if not items:
+                print("No more items found.")
                 break
 
+            for item in items:
+                snippet = item['snippet']
+                data = {
+                    'Channel Name': snippet['channelTitle'],
+                    'Channel ID': item['id']['channelId'],
+                    'Description': snippet['description'],
+                    'Published At': snippet['publishedAt'],
+                    'Link': f"https://www.youtube.com/channel/{item['id']['channelId']}"
+                }
+                channels_data.append(data)
+
+            print(f"Fetched {len(channels_data)} / {max_results} channels...")
+            
+            next_page_token = response.get('nextPageToken')
+            if not next_page_token:
+                break
+            
+            # Sleep briefly to be nice to the API
+            time.sleep(0.5)
+
         except HttpError as e:
-            print("❌ YouTube API Error:")
-            print(e)
+            print(f"\n[!] API Error: {e.reason}")
+            # If quota exceeded, stop trying
+            if e.resp.status in [403, 429]:
+                print("Quota exceeded or rate limit hit. Stopping search.")
+                break
+            else:
+                break
+        except Exception as e:
+            print(f"\n[!] Unexpected Error: {e}")
             break
 
-    return channels
-
+    return channels_data
 
 def main():
-    print("\nYouTube Channel Scraper")
-    print("----------------------")
-
-    keyword = input("Enter keyword (example: marketing): ").strip()
-    if not keyword:
-        print("❌ Keyword cannot be empty.")
-        return
-
     try:
-        limit = int(input("How many channels? (max 500): "))
-    except ValueError:
-        print("❌ Please enter a valid number.")
-        return
+        # Check if API Key is still default
+        if API_KEY == 'YOUR_API_KEY_HERE':
+            print("\n[!] ERROR: You did not put your API Key in the code!")
+            print("Please open the file and paste your key in line 8.")
+        else:
+            keyword = input("Enter keyword to search (e.g. 'Fitness'): ")
+            limit_input = input("How many channels (e.g. 10): ")
+            
+            # specific check for number input
+            if not limit_input.isdigit():
+                print("Please enter a number for the count.")
+                limit = 10
+            else:
+                limit = int(limit_input)
 
-    results = search_channels(keyword, limit)
+            results = search_channels_safe(keyword, limit)
 
-    if not results:
-        print("⚠️ No channels found.")
-        return
+            if results:
+                df = pd.DataFrame(results)
+                # Clean filename
+                clean_name = "".join([c for c in keyword if c.isalnum() or c in (' ','-','_')]).strip()
+                filename = f"{clean_name.replace(' ', '_')}_channels.csv"
+                
+                df.to_csv(filename, index=False)
+                print(f"\n[SUCCESS] Saved {len(results)} channels to: {filename}")
+            else:
+                print("\n[!] No data found or search failed.")
 
-    df = pd.DataFrame(results)
-    filename = f"{keyword.replace(' ', '_')}_channels.csv"
-    df.to_csv(filename, index=False)
+    except Exception as e:
+        print(f"\n[!] Critical Script Error: {e}")
 
-    print(f"\n✅ Success!")
-    print(f"Channels found: {len(results)}")
-    print(f"Saved file: {filename}")
-
+    # --- THIS LINE KEEPS THE WINDOW OPEN ---
+    print("\n------------------------------------------------")
+    input("Process finished. Press Enter to close this window...")
 
 if __name__ == "__main__":
     main()
-
