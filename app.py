@@ -15,24 +15,35 @@ EUROPE_CODES = [
 # --- PAGE CONFIG ---
 st.set_page_config(page_title="YouTube Niche Finder", page_icon="🎯", layout="wide")
 
-# --- CUSTOM CSS FOR VISITED LINKS ---
-# This forces the browser to change the color of links you've already clicked
+# --- CUSTOM CSS FOR LINKS & TABLE ---
 st.markdown("""
 <style>
-/* Unvisited links are standard blue */
-a:link {
-    color: #2980b9;
-    text-decoration: none;
+/* Link Styles */
+a:link { color: #2980b9; text-decoration: none; font-weight: bold; }
+a:visited { color: #8e44ad !important; } /* PURPLE FOR VISITED */
+a:hover { color: #c0392b; text-decoration: underline; }
+
+/* Table Styles to make it look like a Dataframe */
+table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: sans-serif;
+    font-size: 14px;
 }
-/* Visited links turn purple */
-a:visited {
-    color: #8e44ad !important;
+th {
+    background-color: #f0f2f6;
+    color: #31333F;
+    font-weight: bold;
+    text-align: left;
+    padding: 10px;
+    border-bottom: 1px solid #ddd;
 }
-/* Hover effect */
-a:hover {
-    color: #c0392b;
-    text-decoration: underline;
+td {
+    padding: 10px;
+    border-bottom: 1px solid #eee;
+    color: #31333F;
 }
+tr:hover { background-color: #f9f9f9; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -143,7 +154,7 @@ def deep_search(youtube, query, target_count, allowed_countries, max_s, min_s, i
                     })
                     if len(valid_channels) >= target_count: break
                 
-                # DEBUG LOGS (Markdown links will use the CSS styles)
+                # DEBUG LOGS
                 elif debug: 
                     if search_attempts <= 2:
                         with debug_area:
@@ -189,15 +200,35 @@ if st.button("Find Channels", type="primary"):
             
             if results:
                 st.success(f"Found {len(results)} channels!")
+                
+                # --- NEW DISPLAY METHOD (HTML TABLE) ---
                 df = pd.DataFrame(results)
                 
-                # Show Data
-                st.dataframe(
-                    df, 
-                    column_config={
-                        "Link": st.column_config.LinkColumn("Channel Link"),
-                        "Subscribers": st.column_config.NumberColumn(format="%d")
-                    }
+                # Create a copy for display so we don't mess up the download CSV
+                display_df = df.copy()
+                
+                # Convert the 'Link' column into an actual HTML clickable link
+                display_df['Link'] = display_df['Link'].apply(
+                    lambda x: f'<a href="{x}" target="_blank">Open Channel 🔗</a>'
                 )
+                
+                # Convert DataFrame to HTML (escape=False allows the links to work)
+                html_table = display_df.to_html(escape=False, index=False)
+                
+                # Display the HTML table
+                st.markdown(html_table, unsafe_allow_html=True)
+                
+                # Add a spacer
+                st.markdown("<br>", unsafe_allow_html=True)
+                
+                # CSV Download Button (Using the original Clean DF)
+                csv = df.to_csv(index=False).encode('utf-8')
+                st.download_button(
+                    label="📥 Download CSV",
+                    data=csv,
+                    file_name=f"{query}_channels.csv",
+                    mime='text/csv',
+                )
+
             else:
                 st.error("No channels found. Try increasing 'Max Subscribers' or checking 'Include Unknown Locations'.")
