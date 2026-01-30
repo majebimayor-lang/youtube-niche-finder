@@ -15,6 +15,27 @@ EUROPE_CODES = [
 # --- PAGE CONFIG ---
 st.set_page_config(page_title="YouTube Niche Finder", page_icon="🎯", layout="wide")
 
+# --- CUSTOM CSS FOR VISITED LINKS ---
+# This forces the browser to change the color of links you've already clicked
+st.markdown("""
+<style>
+/* Unvisited links are standard blue */
+a:link {
+    color: #2980b9;
+    text-decoration: none;
+}
+/* Visited links turn purple */
+a:visited {
+    color: #8e44ad !important;
+}
+/* Hover effect */
+a:hover {
+    color: #c0392b;
+    text-decoration: underline;
+}
+</style>
+""", unsafe_allow_html=True)
+
 st.title("🎯 Targeted YouTube Niche Finder")
 
 # --- SIDEBAR CONFIG ---
@@ -69,7 +90,7 @@ def deep_search(youtube, query, target_count, allowed_countries, max_s, min_s, i
     valid_channels = []
     next_page_token = None
     search_attempts = 0
-    max_search_depth = 15  # Limit how deep we search to save quota
+    max_search_depth = 15
     
     status_text = st.empty()
     debug_area = st.container() if debug else None
@@ -122,13 +143,11 @@ def deep_search(youtube, query, target_count, allowed_countries, max_s, min_s, i
                     })
                     if len(valid_channels) >= target_count: break
                 
-                # --- UPDATED DEBUG SECTION ---
+                # DEBUG LOGS (Markdown links will use the CSS styles)
                 elif debug: 
-                    # Only show logs for the first 2 pages to keep it clean
                     if search_attempts <= 2:
                         with debug_area:
                             if not is_size_good:
-                                # We use markdown [Name](Link) syntax here
                                 st.markdown(f"❌ **Skipped** [{title}]({channel_url}): Subs {subs} (Wanted {min_s}-{max_s})")
                             elif not is_loc_good:
                                 st.markdown(f"❌ **Skipped** [{title}]({channel_url}): Location '{country}' not in target")
@@ -172,7 +191,7 @@ if st.button("Find Channels", type="primary"):
                 st.success(f"Found {len(results)} channels!")
                 df = pd.DataFrame(results)
                 
-                # Display dataframe with clickable links
+                # Show Data
                 st.dataframe(
                     df, 
                     column_config={
