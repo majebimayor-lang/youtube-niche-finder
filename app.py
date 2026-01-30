@@ -1,51 +1,46 @@
-import os
-from googleapiclient.discovery import build
+import streamlit as st
 import pandas as pd
+from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
 
-# --- CONFIGURATION ---
-API_KEY = 'YOUR_API_KEY_HERE'  # Replace with your actual API Key
-YOUTUBE_API_SERVICE_NAME = 'youtube'
-YOUTUBE_API_VERSION = 'v3'
+# --- PAGE SETUP ---
+st.set_page_config(page_title="YouTube Scraper", page_icon="📹")
+st.title("📹 YouTube Video Scraper")
 
-def get_youtube_service():
-    """Builds and returns the YouTube API service."""
-    return build(YOUTUBE_API_SERVICE_NAME, YOUTUBE_API_VERSION, developerKey=API_KEY)
+# --- SIDEBAR: API KEY INPUT ---
+# This is safer than putting the key in the code directly
+api_key = st.sidebar.text_input("Enter Google API Key", type="password")
 
-def search_videos(query, max_results=10):
-    """
-    Searches for videos by keyword.
-    Returns a list of video IDs.
-    Note: A search request costs 100 quota units.
-    """
-    youtube = get_youtube_service()
-    
-    # Search for videos
-    search_response = youtube.search().list(
-        q=query,
-        type='video',
-        part='id',
-        maxResults=max_results
-    ).execute()
+def get_youtube_service(api_key):
+    return build('youtube', 'v3', developerKey=api_key)
 
+def search_videos(query, max_results, api_key):
+    youtube = get_youtube_service(api_key)
     video_ids = []
-    for item in search_response.get('items', []):
-        video_ids.append(item['id']['videoId'])
+    
+    try:
+        search_response = youtube.search().list(
+            q=query,
+            type='video',
+            part='id',
+            maxResults=max_results
+        ).execute()
+
+        for item in search_response.get('items', []):
+            video_ids.append(item['id']['videoId'])
+    except HttpError as e:
+        st.error(f"API Error: {e}")
+        return []
         
     return video_ids
 
-def get_video_details(video_ids):
-    """
-    Fetches detailed statistics for a list of video IDs.
-    Returns a list of dictionaries containing video data.
-    Note: A videos.list request costs 1 quota unit.
-    """
-    youtube = get_youtube_service()
+def get_video_details(video_ids, api_key):
+    youtube = get_youtube_service(api_key)
     video_data = []
     
-    # The API can handle up to 50 IDs at a time
+    # Process in chunks of 50
     for i in range(0, len(video_ids), 50):
         chunk = video_ids[i:i+50]
-        
         request = youtube.videos().list(
             part="snippet,contentDetails,statistics",
             id=','.join(chunk)
@@ -69,29 +64,38 @@ def get_video_details(video_ids):
             
     return video_data
 
-def main():
-    keyword = input("Enter a keyword to search for: ")
-    count = int(input("How many videos to scrape? (Max 50 for this demo): "))
-    
-    print(f"Searching for '{keyword}'...")
-    try:
-        # 1. Get Video IDs
-        video_ids = search_videos(keyword, max_results=count)
-        
-        # 2. Get Video Details
-        print(f"Fetching details for {len(video_ids)} videos...")
-        details = get_video_details(video_ids)
-        
-        # 3. Save to CSV
-        df = pd.DataFrame(details)
-        filename = f"{keyword.replace(' ', '_')}_youtube_data.csv"
-        df.to_csv(filename, index=False)
-        
-        print(f"Success! Data saved to '{filename}'")
-        print(df.head())
-        
-    except Exception as e:
-        print(f"An error occurred: {e}")
+# --- MAIN APP UI ---
+keyword = st.text_input("Search Keyword", placeholder="e.g. Python Tutorial")
+count = st.number_input("Max Videos to Scrape", min_value=1, max_value=50, value=10)
+start_scrape = st.button("Start Scraping")
 
-if __name__ == "__main__":
-    main()
+if start_scrape:
+    if not api_key:
+        st.error("Please enter your API Key in the sidebar first!")
+    elif not keyword:
+        st.warning("Please enter a keyword.")
+    else:
+        with st.spinner(f"Searching for '{keyword}'..."):
+            # 1. Get IDs
+            ids = search_videos(keyword, count, api_key)
+            
+            if ids:
+                # 2. Get Details
+                st.write(f"Found {len(ids)} videos. Fetching details...")
+                details = get_video_details(ids, api_key)
+                
+                # 3. Show Data
+                df = pd.DataFrame(details)
+                st.success("Scraping Complete!")
+                st.dataframe(df)
+                
+                # 4. Download Button
+                csv = df.to_csv(index=False).encode('utf-8')
+                st.download_button(
+                    label="Download Data as CSV",
+                    data=csv,
+                    file_name=f"{keyword.replace(' ', '_')}_youtube_data.csv",
+                    mime='text/csv',
+                )
+            else:
+                st.warning("No videos found.")
