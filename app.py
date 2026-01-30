@@ -69,7 +69,7 @@ def deep_search(youtube, query, target_count, allowed_countries, max_s, min_s, i
     valid_channels = []
     next_page_token = None
     search_attempts = 0
-    max_search_depth = 15  # Increased depth to 15 pages
+    max_search_depth = 15  # Limit how deep we search to save quota
     
     status_text = st.empty()
     debug_area = st.container() if debug else None
@@ -101,6 +101,7 @@ def deep_search(youtube, query, target_count, allowed_countries, max_s, min_s, i
                 subs = int(channel['statistics'].get('subscriberCount', 0))
                 video_count = int(channel['statistics'].get('videoCount', 0))
                 country = channel['snippet'].get('country', 'Unknown')
+                channel_url = f"https://www.youtube.com/channel/{channel['id']}"
                 
                 # CHECKS
                 is_size_good = min_s <= subs <= max_s
@@ -117,17 +118,20 @@ def deep_search(youtube, query, target_count, allowed_countries, max_s, min_s, i
                         'Subscribers': subs,
                         'Country': country,
                         'Video Count': video_count,
-                        'Link': f"https://www.youtube.com/channel/{channel['id']}"
+                        'Link': channel_url
                     })
                     if len(valid_channels) >= target_count: break
                 
-                # DEBUG: Log why it failed (Only show first 5 failures per page to avoid spam)
-                elif debug and search_attempts <= 2: 
-                    with debug_area:
-                        if not is_size_good:
-                            st.text(f"❌ Skipped '{title}': Subs {subs} (Wanted {min_s}-{max_s})")
-                        elif not is_loc_good:
-                            st.text(f"❌ Skipped '{title}': Location '{country}' not in target")
+                # --- UPDATED DEBUG SECTION ---
+                elif debug: 
+                    # Only show logs for the first 2 pages to keep it clean
+                    if search_attempts <= 2:
+                        with debug_area:
+                            if not is_size_good:
+                                # We use markdown [Name](Link) syntax here
+                                st.markdown(f"❌ **Skipped** [{title}]({channel_url}): Subs {subs} (Wanted {min_s}-{max_s})")
+                            elif not is_loc_good:
+                                st.markdown(f"❌ **Skipped** [{title}]({channel_url}): Location '{country}' not in target")
 
             except Exception:
                 continue
@@ -167,6 +171,14 @@ if st.button("Find Channels", type="primary"):
             if results:
                 st.success(f"Found {len(results)} channels!")
                 df = pd.DataFrame(results)
-                st.dataframe(df, column_config={"Link": st.column_config.LinkColumn()})
+                
+                # Display dataframe with clickable links
+                st.dataframe(
+                    df, 
+                    column_config={
+                        "Link": st.column_config.LinkColumn("Channel Link"),
+                        "Subscribers": st.column_config.NumberColumn(format="%d")
+                    }
+                )
             else:
                 st.error("No channels found. Try increasing 'Max Subscribers' or checking 'Include Unknown Locations'.")
